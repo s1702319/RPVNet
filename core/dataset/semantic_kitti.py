@@ -13,6 +13,7 @@ from core.dataset.collate import sparse_collate_fn
 
 __all__ = ['SemanticKITTIInternal']
 
+
 class SemanticKITTIInternal:
 
     def __init__(self,
@@ -22,8 +23,8 @@ class SemanticKITTIInternal:
                  split,
                  label_name_mapping,
                  kept_labels,
-                 mode = 'train',
-                 range_size = None,
+                 mode='train',
+                 range_size=None,
                  sample_stride=1,
                  submit=False,
                  **kwargs):
@@ -55,8 +56,8 @@ class SemanticKITTIInternal:
             self.files = self.files[::self.sample_stride]
 
         # 构建label id 和 label name的映射
-        reverse_label_name_mapping = {} # 从label name -> cnt
-        self.label_map = np.zeros(260) # 从 原始label -> cnt
+        reverse_label_name_mapping = {}  # 从label name -> cnt
+        self.label_map = np.zeros(260)  # 从 原始label -> cnt
         cnt = 0
         for label_id in label_name_mapping:
             if label_id > 250:
@@ -89,7 +90,8 @@ class SemanticKITTIInternal:
 
     def __getitem__(self, index):
 
-        assert os.path.exists(self.files[index]),f'the [{self.files[index]}] doesn\'t exist.'
+        assert os.path.exists(
+            self.files[index]), f'the [{self.files[index]}] doesn\'t exist.'
 
         # todo 是否可以加入shuffle操作 [解]:直接在Dataloader中进行shuffer就行
         with open(self.files[index], 'rb') as b:
@@ -103,15 +105,15 @@ class SemanticKITTIInternal:
             theta = self.angle
             scale_factor = np.random.uniform(0.95, 1.05)
             rot_mat = np.array([[np.cos(theta), np.sin(theta), 0],
-                                [-np.sin(theta),np.cos(theta), 0],
+                                [-np.sin(theta), np.cos(theta), 0],
                                 [0, 0, 1]])
 
             block[:, :3] = np.dot(block_[:, :3], rot_mat) * scale_factor
 
         else:
             theta = self.angle
-            transform_mat = np.array([[np.cos(theta),np.sin(theta), 0],
-                                      [-np.sin(theta),np.cos(theta), 0],
+            transform_mat = np.array([[np.cos(theta), np.sin(theta), 0],
+                                      [-np.sin(theta), np.cos(theta), 0],
                                       [0, 0, 1]])
 
             block[:, :3] = np.dot(block_[:, :3], transform_mat)
@@ -121,8 +123,10 @@ class SemanticKITTIInternal:
 
         # 读取label
         # todo 注意除了装有bin文件的文件夹,在路径中不能有多个velodyne
-        label_file = self.files[index].replace('velodyne', 'labels').replace('.bin', '.label')
-        assert os.path.exists(label_file),f'the [{label_file}] doesn\'t exist.'
+        label_file = self.files[index].replace(
+            'velodyne', 'labels').replace('.bin', '.label')
+        assert os.path.exists(
+            label_file), f'the [{label_file}] doesn\'t exist.'
 
         if os.path.exists(label_file):
             with open(label_file, 'rb') as a:
@@ -134,22 +138,22 @@ class SemanticKITTIInternal:
         labels_ = self.label_map[all_labels & 0xFFFF].astype(np.int64)
         # print(np.where(labels_==255))
 
-        points_xyz = block[:,:3]
+        points_xyz = block[:, :3]
         # 根据 x,y,z 分别减去最小的坐标值
-        points_xyz_norm = points_xyz - points_xyz.min(0,keepdims=1)
+        points_xyz_norm = points_xyz - points_xyz.min(0, keepdims=1)
 
-        points_refl = block[:,3]
+        points_refl = block[:, 3]
         self.data = {}
         self.point_valid_index = None
-        self.do_voxel_projection(block,points_xyz_norm,labels_)
-        self.do_range_projection(points_xyz,points_refl)
+        self.do_voxel_projection(block, points_xyz_norm, labels_)
+        self.do_range_projection(points_xyz, points_refl)
 
         self.data['filename'] = self.files[index]
         # self.data['device'] = self.device
 
         return self.data
 
-    def do_voxel_projection(self,feat,points_xyz, label):
+    def do_voxel_projection(self, feat, points_xyz, label):
         #                             points_xyz是所有点的坐标
 
         # 求得voxel的坐标
@@ -159,49 +163,49 @@ class SemanticKITTIInternal:
         # pc -= pc.min(0, keepdims=1)
 
         # 这个函数并不改变pc,pc还是12000个
+        # sparse_quantize: 体素化
         _, inds, inverse_map = sparse_quantize(pc, return_index=True,
-                                              return_inverse=True)
+                                               return_inverse=True)
 
         # todo 在训练的时候将会剔除某些voxel,因此在这个过程中需要将voxel里面对应的点云也去掉
         # todo 采用torchsparse来加速
         if self.mode == 'train':
             if len(inds) > self.max_voxels:
-                inds = np.random.choice(inds,self.max_voxels,replace=False)
+                inds = np.random.choice(inds, self.max_voxels, replace=False)
                 pc_ = pc[inds]
-                all_point = torch.concat([torch.from_numpy(pc),torch.zeros(pc.shape[0]).reshape(-1,1)],dim=1).int()
-                voxel_valid = torch.concat([torch.from_numpy(pc_),torch.zeros(pc_.shape[0]).reshape(-1,1)],dim=1).int()
+                all_point = torch.concat([torch.from_numpy(pc), torch.zeros(
+                    pc.shape[0]).reshape(-1, 1)], dim=1).int()
+                voxel_valid = torch.concat(
+                    [torch.from_numpy(pc_), torch.zeros(pc_.shape[0]).reshape(-1, 1)], dim=1).int()
 
-                old_hash = F.sphash(all_point) # 120000+
-                sparse_hash = F.sphash(voxel_valid) # max 84000
+                old_hash = F.sphash(all_point)  # 120000+
+                sparse_hash = F.sphash(voxel_valid)  # max 84000
 
-                self.point_valid_index = F.sphashquery(old_hash,sparse_hash)
-
+                self.point_valid_index = F.sphashquery(old_hash, sparse_hash)
 
         # todo 固定点的个数有助于将 px,py 变成一个规则的 tensor,加快 r2p,p2r
         # if self.point_valid_index.shape[0] > self.num_points :
         #     pass
 
-        coord_,label_,feat_ = (points_xyz[self.point_valid_index != -1],
-                               label[self.point_valid_index != -1],
-                               feat[self.point_valid_index != -1]) \
-                        if self.point_valid_index is not None else (points_xyz,label,feat)
-
+        coord_, label_, feat_ = (points_xyz[self.point_valid_index != -1],
+                                 label[self.point_valid_index != -1],
+                                 feat[self.point_valid_index != -1]) \
+            if self.point_valid_index is not None else (points_xyz, label, feat)
 
         # 这里存进去的坐标都是浮点数
-        self.data['lidar'] = SparseTensor(feats=feat_,coords=coord_)
-        self.data['label'] = SparseTensor(feats=label_,coords=coord_)
+        self.data['lidar'] = SparseTensor(feats=feat_, coords=coord_)
+        self.data['label'] = SparseTensor(feats=label_, coords=coord_)
 
+    def do_range_projection(self, points_xyz, points_refl):
 
-    def do_range_projection(self,points_xyz, points_refl):
+        H, W = self.range_size if self.range_size is not None else (64, 2048)
 
-        H,W = self.range_size if self.range_size is not None else (64,2048)
-
-        points_xyz,points_refl = (points_xyz[self.point_valid_index != -1],
-                                  points_refl[self.point_valid_index != -1]) \
-                     if self.point_valid_index is not None else (points_xyz,points_refl)
+        points_xyz, points_refl = (points_xyz[self.point_valid_index != -1],
+                                   points_refl[self.point_valid_index != -1]) \
+            if self.point_valid_index is not None else (points_xyz, points_refl)
 
         # 计算每个点的模长作为深度
-        depth = np.linalg.norm(points_xyz,2,axis=1)
+        depth = np.linalg.norm(points_xyz, 2, axis=1)
 
         # get scan components
         scan_x = points_xyz[:, 0]
@@ -211,8 +215,6 @@ class SemanticKITTIInternal:
         # get angles of all points
         yaw = -np.arctan2(scan_y, -scan_x)
         proj_x = 0.5 * (yaw / np.pi + 1.0)  # in [0.0, 1.0]
-
-
 
         # np.nonzero返回数组中的非零索引 [https://blog.csdn.net/u013698770/article/details/54632047/]
         # 目的是找到64线的交接点,就是从 >0.8到<0.2的这个跳转点,因为是64线lidar,因此有64个点
@@ -260,30 +262,27 @@ class SemanticKITTIInternal:
         ''' 
         v2: using the average points' depth 
         '''
-        proj_range = np.zeros((H,W)) + 1e-5
-        proj_cumsum = np.zeros((H,W)) + 1e-5
+        proj_range = np.zeros((H, W)) + 1e-5
+        proj_cumsum = np.zeros((H, W)) + 1e-5
         proj_reflectivity = np.zeros((H, W))
-        proj_range[proj_y,proj_x] += depth
-        proj_cumsum[proj_y,proj_x] += 1
+        proj_range[proj_y, proj_x] += depth
+        proj_cumsum[proj_y, proj_x] += 1
         proj_reflectivity[proj_y, proj_x] += points_refl
-
 
         # inverse depth
         proj_range = proj_cumsum / proj_range
 
         proj_reflectivity = proj_reflectivity / proj_cumsum
 
-
         # nomalize values to -10 and 10
         depth_image = 25 * (proj_range - 0.4)
         refl_image = 20 * (proj_reflectivity - 0.5)
 
-
         # 默认在channel维度进行拼接了
-        range_image = np.stack([depth_image,refl_image]).astype(np.float32)
+        range_image = np.stack([depth_image, refl_image]).astype(np.float32)
 
-        px = px[np.newaxis,:]
-        py = py[np.newaxis,:]
+        px = px[np.newaxis, :]
+        py = py[np.newaxis, :]
         py = 2. * (py / H - 0.5)
         px = 2. * (px / W - 0.5)
 
