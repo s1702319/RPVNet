@@ -173,8 +173,8 @@ class SemanticKITTIInternal:
             if len(inds) > self.max_voxels:
                 inds = np.random.choice(inds, self.max_voxels, replace=False)
                 pc_ = pc[inds]
-                all_point = torch.concat([torch.from_numpy(pc), torch.zeros(
-                    pc.shape[0]).reshape(-1, 1)], dim=1).int()
+                all_point = torch.concat([torch.from_numpy(pc), 
+                                        torch.zeros(pc.shape[0]).reshape(-1, 1)], dim=1).int()
                 voxel_valid = torch.concat(
                     [torch.from_numpy(pc_), torch.zeros(pc_.shape[0]).reshape(-1, 1)], dim=1).int()
 

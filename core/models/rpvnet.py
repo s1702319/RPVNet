@@ -189,8 +189,10 @@ class RPVnet(nn.Module):
 
         ''' Fuse 1 '''
         v0 = self.voxel_stem(v0)
+        # [n, 32]
         points.F = self.point_stem[0](points.F) # 32
-        range0 = self.range_stem(image) # n,32,64,2048
+        # [n,32,64,2048]
+        range0 = self.range_stem(image)
 
         range0,points,v0 = self.gfm_stem(range0,points,v0,px,py)
 
